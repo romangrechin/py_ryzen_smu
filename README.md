@@ -12,7 +12,7 @@ usage: ryzen_smu [-h] [--disable_oc DISABLE_OC] [--freq FREQ] [--volt VOLT]
 optional arguments:
   -h, --help                   show this help message and exit
   --disable_oc DISABLE_OC
-  --freq FREQ                  core frequency in Mhz
+  --freq FREQ                  CPU frequency in Mhz
   --volt VOLT                  CPU voltage in mV
   --core_freq CORE_FREQ        core frequency in Mhz
   --core_id CORE_ID
