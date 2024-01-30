@@ -1,0 +1,164 @@
+#!/usr/bin/python3
+
+import argparse
+import array
+import struct
+
+SMU_ARGS = '/sys/kernel/ryzen_smu_drv/smu_args'
+SMU_RSMU_CMD = '/sys/kernel/ryzen_smu_drv/rsmu_cmd'
+
+CMD_SetPPTLimit = 0x53
+CMD_SetTDCLimit = 0x54
+CMD_SetEDCLimit = 0x55
+CMD_SetcHTCLimit = 0x56
+CMD_SetPBOScalar = 0x58
+CMD_EnableOverclocking = 0x5A
+CMD_DisableOverclocking = 0x5B
+CMD_SetOverclockFreqAllCores = 0x5C
+CMD_SetOverclockFreqPerCore = 0x5D
+CMD_SetOverclockCPUVID = 0x61
+CMD_GetMaxFrequency = 0x6E
+CMD_GetProcessorParameters = 0x6F
+
+
+def check_error(err: int = 0):
+    if err == 0:
+        return
+    print('error: ' + str(err))
+    exit(1)
+
+
+def get_args_buf(arg1: int = 0, arg2: int = 0, arg3: int = 0, arg4: int = 0, arg5: int = 0, arg6: int = 0):
+    arr = array.array('I')
+    arr.append(arg1)
+    arr.append(arg2)
+    arr.append(arg3)
+    arr.append(arg4)
+    arr.append(arg5)
+    arr.append(arg6)
+    return arr.tobytes()
+
+
+def execute_command(cmd_path: str, cmd: int = 0, buf: bytes = None):
+    if cmd == 0:
+        raise Exception('invalid command', str(cmd))
+    if buf is not None:
+        with open(SMU_ARGS, 'wb') as f:
+            f.write(buf)
+    res = 0xffffffff
+    with open(cmd_path, 'wb') as f:
+        f.write(struct.pack('<I', cmd))
+    with open(cmd_path, 'rb') as f:
+        while True:
+            f.seek(0)
+            v = struct.unpack('<I', f.read())
+            res = v[0]
+            if res != 0:
+                break
+        return res
+
+
+def read_response():
+    with open(SMU_ARGS, 'rb') as f:
+        return f.read()
+
+
+def rsmu_command(cmd: int = 0, buf: bytes = None):
+    return execute_command(SMU_RSMU_CMD, cmd, buf)
+
+
+def rsmu_request(cmd: int = 0):
+    buf = get_args_buf()
+    res = rsmu_command(cmd, buf)
+    if res != 0:
+        raise Exception('rsmu_request error for command', str(cmd))
+    return read_response()
+
+
+def enable_overclocking(enable: bool):
+    if enable:
+        return rsmu_command(CMD_EnableOverclocking)
+    else:
+        return rsmu_command(CMD_DisableOverclocking)
+
+
+def set_freq_to_all_cores(freq: int):
+    a = get_args_buf(freq)
+    return rsmu_command(CMD_SetOverclockFreqAllCores, a)
+
+
+def set_freq_per_core(freq: int, core_id: int, ccx_id: int, ccd_id: int):
+    v = ((core_id & 0xF | (16 * (ccx_id & 0xF | (16 * ccd_id)))) << 20)
+    value: int = freq & 0xFFFFF | v
+    a = get_args_buf(value)
+    return rsmu_command(CMD_SetOverclockFreqPerCore, a)
+
+
+def set_voltage(mv: int):
+    aligned_mv = int(int(mv / 6.25) * 6.25)
+    vid = int((1550 - aligned_mv) / 6.25)
+    if vid <= 0:
+        print('invalid voltage')
+        return 2
+    a = get_args_buf(vid)
+    return rsmu_command(CMD_SetOverclockCPUVID, a)
+
+
+def set_ppt_limit(limit: int):
+    a = get_args_buf(limit)
+    return rsmu_command(CMD_SetPPTLimit, a)
+
+
+def set_tdc_limit(limit: int):
+    a = get_args_buf(limit)
+    return rsmu_command(CMD_SetTDCLimit, a)
+
+
+def set_edc_limit(limit: int):
+    a = get_args_buf(limit)
+    return rsmu_command(CMD_SetEDCLimit, a)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('--disable_oc', type=bool, default=False)
+    parser.add_argument('--freq', type=int, default=0, help='core frequency in Mhz')
+    parser.add_argument('--volt', type=int, default=0, help='CPU voltage in mV')
+    parser.add_argument('--core_freq', type=int, default=0, help='core frequency in Mhz')
+    parser.add_argument('--core_id', type=int, default=0)
+    parser.add_argument('--ccx_id', type=int, default=0)
+    parser.add_argument('--ccd_id', type=int, default=0)
+
+    parser.add_argument('--ppt_limit', type=int, default=0, help='PPT limit in mW')
+    parser.add_argument('--tdc_limit', type=int, default=0, help='TDC limit in mA')
+    parser.add_argument('--edc_limit', type=int, default=0, help='EDC limit in mA')
+
+    args = parser.parse_args()
+    if args.disable_oc:
+        check_error(enable_overclocking(False))
+        exit(0)
+
+    if args.freq > 0 or \
+            args.volt > 0 or \
+            args.core_freq > 0 or \
+            args.ppt_limit > 0 or \
+            args.tdc_limit > 0 or \
+            args.edc_limit > 0:
+
+        if args.volt > 0:  # mV
+            check_error(set_voltage(args.volt))
+
+        if args.freq > 0:  # MHz
+            check_error(set_freq_to_all_cores(args.freq))
+
+        if args.core_freq > 0:  # MHz
+            check_error(set_freq_per_core(args.core_freq, args.core_id, args.ccx_id, args.ccd_id))
+
+        if args.ppt_limit > 0:  # mW
+            check_error(set_ppt_limit(args.ppt_limit))
+
+        if args.tdc_limit > 0:  # mA
+            check_error(set_tdc_limit(args.tdc_limit))
+
+        if args.edc_limit > 0:  # mA
+            check_error(set_edc_limit(args.edc_limit))
