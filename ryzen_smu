@@ -144,6 +144,8 @@ if __name__ == '__main__':
             args.ppt_limit > 0 or \
             args.tdc_limit > 0 or \
             args.edc_limit > 0:
+        
+        check_error(enable_overclocking(True)) 
 
         if args.volt > 0:  # mV
             check_error(set_voltage(args.volt))
