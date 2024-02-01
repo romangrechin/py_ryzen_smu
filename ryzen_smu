@@ -22,7 +22,7 @@ CMD_GetProcessorParameters = 0x6F
 
 
 def check_error(err: int = 0):
-    if err == 0:
+    if err == 1:
         return
     print('error: ' + str(err))
     exit(1)
